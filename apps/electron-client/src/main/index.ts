@@ -6,12 +6,17 @@ app.setName('Signal Browser')
 
 const gotTheLock = app.requestSingleInstanceLock()
 
-const SNAPSHOT_PATH = join(app.getAppPath(), 'page-snapshot.html')
-const WATCHES_DIR = join(app.getAppPath(), 'watches')
+const getSnapshotPath = () => join(app.getPath('userData'), 'page-snapshot.html')
+const getWatchesDir = () => join(app.getPath('userData'), 'watches')
 
-if (!existsSync(WATCHES_DIR)) mkdirSync(WATCHES_DIR, { recursive: true })
+const ensureWatchesDir = () => {
+  const dir = getWatchesDir()
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  return dir
+}
 
 const saveHtmlSnapshot = (html: string) => {
+  const SNAPSHOT_PATH = getSnapshotPath()
   writeFile(SNAPSHOT_PATH, html, 'utf-8', (err) => {
     if (err) console.error('Failed to save HTML snapshot:', err)
     else console.log(`[Snapshot saved] ${SNAPSHOT_PATH}`)
@@ -20,7 +25,7 @@ const saveHtmlSnapshot = (html: string) => {
 
 const saveWatch = (data: { url: string; condition: string; elementHtml: string; selector: string; timestamp: string }) => {
   const filename = `watch-${Date.now()}.json`
-  const filepath = join(WATCHES_DIR, filename)
+  const filepath = join(ensureWatchesDir(), filename)
   const content = JSON.stringify(data, null, 2)
   writeFile(filepath, content, 'utf-8', (err) => {
     if (err) console.error('Failed to save watch:', err)
