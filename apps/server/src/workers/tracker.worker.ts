@@ -90,13 +90,17 @@ const worker = new Worker(
 
     console.log(`[worker] Extracted value: "${extractedValue}" | Condition: ${rule.operator} ${rule.targetValue}`)
 
-    // 6. Update lastCheckedAt
+    const wasMet = tracker.lastConditionMet ?? false;
+
+    // 6. Persist check outcome (also drives edge-triggered notifications below)
     await db.update(trackers)
-      .set({ lastCheckedAt: new Date() })
+      .set({ lastCheckedAt: new Date(), lastConditionMet: triggered })
       .where(eq(trackers.id, trackerId))
 
-    // 7. Fire notification if condition is met
-    if (triggered) {
+    // 7. Fire notification only on the unmet -> met transition.
+    // While the condition stays met we keep checking (and recording results)
+    // but skip the email; it re-arms as soon as a check comes back unmet.
+    if (triggered && !wasMet) {
       console.log(`[worker] CONDITION MET for tracker ${trackerId}!`)
       console.log(`   URL: ${tracker.targetUrl}`)
       console.log(`   Value: "${extractedValue}" ${rule.operator} ${rule.targetValue}`)
@@ -111,6 +115,8 @@ const worker = new Worker(
       } else {
         console.log(`[worker] No notification email set for tracker ${trackerId}`)
       }
+    } else if (triggered) {
+      console.log(`[worker] Condition still met for tracker ${trackerId} — email already sent, skipping`)
     }
 
     // 8. Store result

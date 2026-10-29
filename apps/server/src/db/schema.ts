@@ -15,6 +15,9 @@ export const trackers = pgTable('trackers', {
   
   status: statusEnum('status').default('active').notNull(),
   lastCheckedAt: timestamp('last_checked_at'),
+  // Previous check outcome — drives edge-triggered emails:
+  // only notify on the unmet -> met transition, not every run while met.
+  lastConditionMet: boolean('last_condition_met').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
