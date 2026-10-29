@@ -45,7 +45,7 @@ export async function sendNotificationEmail(
   const info = await mailer.sendMail({
     from: '"Signal Tracker" <noreply@signal.local>',
     to: toEmail,
-    subject: '🔔 Signal Alert: Condition Met!',
+    subject: 'Signal Alert: Condition Met!',
     html: `
       <h2>Your Signal Tracker was triggered!</h2>
       <p><strong>Rule:</strong> ${ruleSummary}</p>

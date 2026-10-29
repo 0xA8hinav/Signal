@@ -78,9 +78,10 @@ const worker = new Worker(
     } catch (err: any) {
       console.error(`[worker] Extraction failed for tracker ${trackerId}:`, err.message)
       
-      // Update tracker status to error
+      // We do not set status to 'error' here because web scraping is flaky
+      // (e.g. captchas, timeouts) and we want it to retry on the next interval.
       await db.update(trackers)
-        .set({ status: 'error', lastCheckedAt: new Date() })
+        .set({ lastCheckedAt: new Date() })
         .where(eq(trackers.id, trackerId))
 
       // Exit early to prevent accessing unassigned variables below
@@ -96,7 +97,7 @@ const worker = new Worker(
 
     // 7. Fire notification if condition is met
     if (triggered) {
-      console.log(`🔔 [worker] CONDITION MET for tracker ${trackerId}!`)
+      console.log(`[worker] CONDITION MET for tracker ${trackerId}!`)
       console.log(`   URL: ${tracker.targetUrl}`)
       console.log(`   Value: "${extractedValue}" ${rule.operator} ${rule.targetValue}`)
 
