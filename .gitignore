@@ -53,3 +53,11 @@ docker-compose.override.yml
 # ── Misc ──────────────────────────────────────────────────────────────────────
 .turbo/
 *.local
+
+# ── Signal runtime artifacts (local only, never commit) ───────────────────
+# Snapshot HTML saved by the Electron client on every DOM change
+page-snapshot.html
+# Watch JSON files saved by the Electron client (now under userData, keep for safety)
+watches/
+# Throwaway extraction experiments at repo root (tracked copy lives in apps/server/)
+test_extraction*.ts
