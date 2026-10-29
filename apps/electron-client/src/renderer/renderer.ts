@@ -161,11 +161,11 @@ confirmBtn.addEventListener('click', async () => {
     console.log('[renderer] Tracker created:', tracker.id, '| Rule:', rule)
 
     hideDialog()
-    showToast(`✓ Watch saved — monitoring ${rule.extractionType} rule`)
+    showToast(`Watch saved — monitoring ${rule.extractionType} rule`)
 
   } catch (err: any) {
     console.error('[renderer] Setup failed:', err)
-    showToast(`✗ ${err.message ?? 'Failed to create watch'}`, false)
+    showToast(`${err.message ?? 'Failed to create watch'}`, false)
   } finally {
     confirmBtn.disabled = false
     confirmBtn.textContent = 'Save Watch'
@@ -210,16 +210,21 @@ const loadMonitors = async () => {
 
     monitorsList.innerHTML = data.trackers.map((t: any) => `
       <div style="background: #1a1b1d; border: 1px solid #3c4043; padding: 12px; border-radius: 8px;">
-        <div style="color: #8ab4f8; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${t.targetUrl}">
+        <a href="#" class="open-link" data-url="${t.targetUrl}" title="${t.targetUrl}" style="color: #8ab4f8; margin-bottom: 4px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: underline; cursor: pointer;">
           ${t.targetUrl}
-        </div>
+        </a>
         <div style="color: #e8eaed;">
           <strong>Rule:</strong> ${t.rule.humanReadableSummary || `${t.rule.operator} ${t.rule.targetValue}`}
         </div>
         <div style="color: #9aa0a6; font-size: 11px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
           <span>Status: <span style="color: ${t.status === 'active' ? '#34a853' : '#ea4335'}">${t.status}</span></span>
-          <button class="test-btn" data-id="${t.id}" style="padding: 4px 10px; background: #3c4043; border: none; border-radius: 4px; color: #8ab4f8; font-size: 11px; cursor: pointer;">Test Now</button>
+          <span style="display: flex; gap: 6px;">
+            <button class="test-btn" data-id="${t.id}" style="padding: 4px 10px; background: #3c4043; border: none; border-radius: 4px; color: #8ab4f8; font-size: 11px; cursor: pointer;">Test Now</button>
+            <button class="history-btn" data-id="${t.id}" style="padding: 4px 10px; background: transparent; border: 1px solid #5f6368; border-radius: 4px; color: #e8eaed; font-size: 11px; cursor: pointer;">History</button>
+            <button class="delete-btn" data-id="${t.id}" style="padding: 4px 10px; background: transparent; border: 1px solid #5f6368; border-radius: 4px; color: #ea4335; font-size: 11px; cursor: pointer;">Delete</button>
+          </span>
         </div>
+        <div class="history-list" id="history-${t.id}" style="display: none; margin-top: 8px; border-top: 1px solid #3c4043; padding-top: 8px; font-size: 12px;"></div>
       </div>
     `).join('')
   } catch (err: any) {
@@ -228,7 +233,23 @@ const loadMonitors = async () => {
 }
 
 monitorsList.addEventListener('click', async (e) => {
-  const btn = e.target as HTMLButtonElement
+  const el = e.target as HTMLElement
+  const btn = el.closest('button') as HTMLButtonElement | null
+  const link = el.closest('.open-link') as HTMLAnchorElement | null
+
+  if (link) {
+    e.preventDefault()
+    const url = link.getAttribute('data-url')
+    if (url) {
+      window.browserApi.navigate(url)
+      monitorsDialog.classList.remove('visible')
+      window.browserApi.overlayHide()
+    }
+    return
+  }
+
+  if (!btn) return
+
   if (btn.classList.contains('test-btn')) {
     const id = btn.getAttribute('data-id')
     if (!id || !authToken) return
@@ -246,13 +267,82 @@ monitorsList.addEventListener('click', async (e) => {
       
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
 
-      alert(`✅ Extracted Value: ${data.extractedValue}\nCondition Met: ${data.triggered ? 'YES' : 'NO'}\nRule: ${data.operator} ${data.targetValue}`)
+      alert(`Extracted Value: ${data.extractedValue}\nCondition Met: ${data.triggered ? 'YES' : 'NO'}\nRule: ${data.operator} ${data.targetValue}`)
     } catch (err: any) {
-      alert(`❌ Test Failed:\n${err.message}`)
+      alert(`Test Failed:\n${err.message}`)
     } finally {
       btn.textContent = originalText || 'Test Now'
       btn.disabled = false
     }
+    return
+  }
+
+  if (btn.classList.contains('delete-btn')) {
+    const id = btn.getAttribute('data-id')
+    if (!id || !authToken) return
+    if (!confirm('Delete this monitor? This stops future checks.')) return
+
+    const originalText = btn.textContent
+    btn.textContent = 'Deleting...'
+    btn.disabled = true
+
+    try {
+      const res = await fetch(`${SERVER_URL}/api/trackers/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      await loadMonitors()
+    } catch (err: any) {
+      alert(`Delete failed:\n${err.message}`)
+      btn.textContent = originalText || 'Delete'
+      btn.disabled = false
+    }
+    return
+  }
+
+  if (btn.classList.contains('history-btn')) {
+    const id = btn.getAttribute('data-id')
+    if (!id || !authToken) return
+    const container = document.getElementById(`history-${id}`) as HTMLDivElement | null
+    if (!container) return
+
+    if (container.style.display !== 'none' && container.dataset.loaded === '1') {
+      container.style.display = 'none'
+      btn.textContent = 'History'
+      return
+    }
+
+    btn.textContent = 'Loading...'
+    try {
+      const res = await fetch(`${SERVER_URL}/api/trackers/${id}/history?limit=20`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+
+      const rows = data.history as any[]
+      if (rows.length === 0) {
+        container.innerHTML = '<div style="color: #9aa0a6;">No checks yet — worker runs every 5 min.</div>'
+      } else {
+        container.innerHTML = rows.map((r: any) => `
+          <div style="display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid #2d2e30;">
+            <span style="color: #e8eaed; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${r.extractedValue ?? '(no value)'}</span>
+            <span style="color: ${r.isConditionMet ? '#34a853' : '#9aa0a6'}; white-space: nowrap;">${r.isConditionMet ? 'MET' : 'not met'}</span>
+            <span style="color: #5f6368; white-space: nowrap;">${r.createdAt ? new Date(r.createdAt).toLocaleString() : ''}</span>
+          </div>
+        `).join('')
+      }
+      container.dataset.loaded = '1'
+      container.style.display = 'block'
+      btn.textContent = 'Hide'
+    } catch (err: any) {
+      container.innerHTML = `<div style="color: #ea4335">History failed: ${err.message}</div>`
+      container.style.display = 'block'
+      btn.textContent = 'History'
+    }
+    return
   }
 })
 

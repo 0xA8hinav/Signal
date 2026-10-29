@@ -1,7 +1,7 @@
 // apps/server/src/api/trackers.router.ts
 import { Router } from 'express';
 import { auth } from 'express-oauth2-jwt-bearer';
-import { setupTracker, listTrackers, testTracker } from './trackers.controller';
+import { setupTracker, listTrackers, testTracker, deleteTracker, getTrackerHistory } from './trackers.controller';
 
 export const trackersRouter = Router();
 
@@ -20,4 +20,6 @@ trackersRouter.use(jwtCheck);
 
 trackersRouter.post('/setup', setupTracker);
 trackersRouter.get('/', listTrackers);
+trackersRouter.get('/:id/history', getTrackerHistory);
 trackersRouter.post('/:id/test', testTracker);
+trackersRouter.delete('/:id', deleteTracker);

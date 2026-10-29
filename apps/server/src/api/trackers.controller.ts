@@ -1,13 +1,13 @@
 import type { Request, Response } from 'express'
 import { db } from '../db/index.js'
-import { trackers } from '../db/schema.js'
-import { eq } from 'drizzle-orm'
+import { trackers, trackerResults } from '../db/schema.js'
+import { eq, desc } from 'drizzle-orm'
 import type { SetupTrackerPayload, ExtractionRule } from '@signal/shared-types'
 import { EXTRACTION_RULE_SYSTEM_PROMPT } from './prompts.js'
 import { scheduleTracker } from '../workers/tracker.worker.js'
 
 const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent'
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -181,6 +181,7 @@ export async function listTrackers(req: Request, res: Response) {
 
 import { runExtraction } from '../services/extraction.service.js';
 import { sendNotificationEmail } from '../services/email.service.js';
+import { trackerQueue } from '../workers/tracker.worker.js';
 
 export async function testTracker(req: Request, res: Response) {
   const userId = (req as any).auth?.payload?.sub ?? 'local-user';
@@ -220,6 +221,74 @@ export async function testTracker(req: Request, res: Response) {
     });
   } catch (err: any) {
     console.error(`[testTracker] Error testing tracker ${trackerId}:`, err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
+export async function deleteTracker(req: Request, res: Response) {
+  const userId = (req as any).auth?.payload?.sub ?? 'local-user';
+  const trackerId = req.params.id;
+
+  try {
+    const [tracker] = await db
+      .select()
+      .from(trackers)
+      .where(eq(trackers.id, trackerId))
+
+    if (!tracker) {
+      return res.status(404).json({ error: 'Tracker not found' });
+    }
+
+    if (tracker.userId !== userId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // Stop the repeating BullMQ job first so it doesn't fire after delete
+    try {
+      await trackerQueue.removeJobScheduler(`tracker-${trackerId}`);
+    } catch (err: any) {
+      console.warn(`[deleteTracker] Failed to remove scheduler for ${trackerId}:`, err.message);
+    }
+
+    await db.delete(trackers).where(eq(trackers.id, trackerId));
+
+    console.log(`[deleteTracker] Deleted tracker ${trackerId} (User: ${userId})`);
+    res.json({ success: true, id: trackerId });
+  } catch (err: any) {
+    console.error(`[deleteTracker] Error deleting tracker ${trackerId}:`, err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
+export async function getTrackerHistory(req: Request, res: Response) {
+  const userId = (req as any).auth?.payload?.sub ?? 'local-user';
+  const trackerId = req.params.id;
+  const limit = Math.min(Number(req.query.limit ?? 50), 200);
+
+  try {
+    const [tracker] = await db
+      .select({ id: trackers.id, userId: trackers.userId })
+      .from(trackers)
+      .where(eq(trackers.id, trackerId))
+
+    if (!tracker) {
+      return res.status(404).json({ error: 'Tracker not found' });
+    }
+
+    if (tracker.userId !== userId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const rows = await db
+      .select()
+      .from(trackerResults)
+      .where(eq(trackerResults.trackerId, trackerId))
+      .orderBy(desc(trackerResults.createdAt))
+      .limit(limit)
+
+    res.json({ history: rows });
+  } catch (err: any) {
+    console.error(`[getTrackerHistory] Error loading history for ${trackerId}:`, err);
     res.status(500).json({ error: err.message });
   }
 }
